@@ -3,7 +3,7 @@
 
 ## 1. Necessary information for integration
 To start integration, you need to get your **agent’s account email**, account **secret key**, and **server secret key**.\
-All this data will be provided by your manager when you are connected to the system.
+All this data will be provided by your manager when you connect to the system.
 
 **Example values:**\
 *Agent’s account email:* `agent@cyclebit.io`\
@@ -24,8 +24,8 @@ The token is generated using the JWT method with desired library for your langua
 	    "secret": "1234432690"
     }
     ```
-    For key `email` value is the agent’s account email as sting.\
-    For key `secret` value is the secret key as sting.
+    For key `email` value is the agent’s account email as string.\
+    For key `secret` value is the secret key as string.
     - Algorithm: `HS256`
     - Server secret key for encoding payload **(server secret key)**: `AA1353253C3B8923BFD6AAAF3A73`
     - Encoded Bearer token: `eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImFnZW50QGN5Y2xlYml0LmlvIiwic2VjcmV0IjoiMTIzNDQzMjY5MCJ9.Y91CiJwYR8bgNQbWWZV_VqZAweEt09fQmmsLrOa0vKY`
@@ -45,15 +45,18 @@ POST request — https://online.cyclebit.net/api/payment/createPayment
     You can send various parameters in the request body, such as the amount, the payer's\
     email address, the payment description that will be displayed in your list of operations, and so on.
     1. Necessary parameter:\
-    `"amount": "100.11"` - amount for the payment in your local fiat currency (this value can be a\
-    floating-point number with up to 2 digits after point **(string or int/float)**.
+    `"amount": "100.11"` - amount for the payment in your local fiat currency\
+    (this value can be a floating-point number with up to 2 digits after point) **(string or int/float)**;
     1. Additional parameters:\
     `"redirect_url": "https://cyclebit.io/"` – URL that the user will be redirected to after\
     completing the payment successfully (If this parameter is not provided, the user will be sent\
-    to the page with the payment receipt **(string)**;\
-    `"description": "Just test"` – custom payment description that will be linked to the payment\
-    and displayed in the list of operations **(string)**.\
+    to the page with the payment receipt) **(string)**;\
+    `"description": "Just test"` – custom payment description that will be associated with the payment\
+    and displayed in the list of operations in the Cyclebit web UI **(string)**;\
     ![](/images/screenshots/description.png)
+    `"callback_url": "https://callbackserver.com"` – URL to which the callback notification message\
+    will be sent after the payment is successfully confirmed **(string)**.\
+    Callbacks will be described [below](#callbacks).
     1. Payer KYC parameters (optional, but you can submit them if you have the information\
     about the payer):\
     `"fullname": "John Johnson"` – payer’s name **(string)**;\
@@ -63,9 +66,9 @@ POST request — https://online.cyclebit.net/api/payment/createPayment
     `"address": "Test Address 11"` – payer’s residential address **(string)**;\
     `"city": "Miami"` – payer’s city of residence **(string)**;\
     `"state": "Florida"` – payer’s state/province of residence **(string)**;\
-    `"zip": "33140"` – payer’s zip/postal code **(string)**;
+    `"zip": "33140"` – payer’s zip/postal code **(string)**.
 
-- **Response.**\
+- **Response**\
 The response will come in this form:
     ```json
     {
@@ -78,7 +81,7 @@ The response will come in this form:
     - `"url": "http://online.cyclebit.net/edit?id=0252f1b1-9fc8-4617-a70e-b4d2aca3c971"` – URL for redirecting\
     the user to further payment **(string)**;
     - `"tranId": "0252f1b1-9fc8-4617-a70e-b4d2aca3c971"` — transaction ID to track the payment by **(string)**;
-    - `"success": true` – the status of a request **(boolean)**;
+    - `"success": true` – status of the request **(boolean)**.
 
     If the request is made incorrectly, an error with a description will be returned:
     ```json
@@ -92,54 +95,83 @@ The response will come in this form:
     The `description` field will display the reason for the failure.
 
 ## 3. Payment monitoring
-The payment status is checked via interaction with the Cyclebit processing API. The method of checking the transaction status
-by `tranId` does not require authorization and is very easy to use.
 
-Endpoint for the request (brackets should **not** be sent and indicates a variable):\
-GET request — https://prc-api-pro-eu.cyclebit.net/api/v1/payment/statusPublic/{tranId}
+### Callbacks
 
-Response example (if the payer has not yet selected a cryptocurrency for the payment):
+To simplify the monitoring of Cycle Online transactions, it makes sense to use callbacks.\
+This will allow you to not create a separate queue system for checking payments statuses, but simply receive notifications about successful payments.\
+To do this, you need to deploy a simple server on your side, which will listen for incoming POST requests from the Cyclebit server.
+
+Callbacks workflow:
+1. Create a payment with the `callback_url` parameter, which will contain the address of your notification server.\
+Example: `"callback_url": "https://myfavouriteshop.com/notifications"`\
+**Important**: your website must support the HTTPS protocol (URL must start with https://);
+1. Listen for HTTPS POST requests that come to this URL;
+1. As soon as you receive a notification with a similar body, respond to it with any message with the HTTP code **200 OK**, otherwise the Cyclebit server will resend you a notification for a specific payment again.
+Notification request body model:
+    ```json
+    {
+        "TransactionId": "e3cc51a0-4542-4433-af5e-28f2dea99e7e",
+        "State": "completed",
+        "Success": true
+    }
+    ```
+1. Make a payment verification [status request to the public Cycle Online API](#status-request) to make sure that the transaction is completed successful.
+
+
+In any case, do not rely on the response from the callback notification to directly confirm the payment in your system, as the address of the Cycle Online server may change.\
+**Be sure to perform the fourth step** of workflow.
+
+The Cyclebit server will send you notification callbacks for each transaction until it receives an HTTP 200 OK response from your server, or until 8 callbacks with responses other than 200 OK have passed.
+
+Retry intervals for notifications:
+1. Immediately after payment confirmation
+1. 30 seconds after payment confirmation
+1. 5 minutes after payment confirmation
+1. 30 minutes after payment confirmation
+1. 1 hour after payment confirmation
+1. 4 hours after payment confirmation
+1. 12 hours after payment confirmation
+1. 24 hours after payment confirmation
+
+
+
+### Status request
+
+The payment status is checked via interaction with the Cyclebit public API.\
+The method of checking the payment status by `tranId` does not require authorization and is very easy to use.
+
+Endpoint for the request (braces should **not** be sent and indicates a variable):\
+GET request — https://online.cyclebit.net/publicApi/payment/statusPublic/{tranId}
+
+Response example (successfully completed payment):
 ```json
 {
-    "Transaction": null,
-    "ErrorCode": 0,
-    "ErrorMessage": null,
-    "Validations": null
+    "state": "completed",
+    "success": "true",
+    "description": null
 }
 ```
-Response example (if the payer has chosen a cryptocurrency to pay with):
+Response example (no transaction was found with the provided `tranId`):
 ```json
 {
-    "Transaction": {
-        "ID": "0252F1B1-9FC8-4617-A70E-B4D2ACA3C971",
-        "State": 200,
-        "Substate": 201,
-        "ResultCode": 0,
-        "ResultMessage": null,
-        "Status": null
-    },
-    "ErrorCode": 0,
-    "ErrorMessage": null,
-    "Validations": null
+    "state": null,
+    "success": false,
+    "description": "Transaction guid not found"
 }
 ```
-Monitoring must be performed by the value of the `Substate` attribute in the `Transaction` object.
+Monitoring must be performed by the value of the `state` attribute in the returned json object.
 
-If the response is received with `"Transaction": null` for more than an hour, you must generate a
-new payment link for the payer and monitor a new transaction by `tranId`.
+Dictionary of payment statuses (`state` value):
+1. `null` — transaction id not found;
+1. `created` — payment was created, the payer has not yet selected the currency for payment;
+1. `pending` — payer chose the currency to pay the invoice, but incoming transaction in the blockchain has not yet been detected;
+1. `paid` — incoming transaction in blockchain was found, but did not reach the required amount of confirmations;
+1. `completed` — payment is successfully completed, you can release good(s)/service(s) to the payer, the receipt has been sent to the payer's email address specified in the KYC form;
+1. `failed` — payment failed for some reason (verification error, funds were not sent by the payer, etc.).
 
-Dictionary of transaction substatuses (`Substate` value in `Transaction` object):
-1. `201` — the operation is waiting for the payer to send the funds;
-1. `203` — the sent funds have been detected. Waiting for the confirmation(s) in the blockchain;
-1. `401` or `411` — the payment was made **successfully**, operation is finalized;
-1. `402` or `412` — the payment is **failed**, operation is finalized.
 
-If Cyclebit does not detect funds within 15 minutes after receiving the `201` status, the operation will fail and go to the `402` or `412` status.
-
-If a Substatus `203` was received, Cyclebit detected the sent funds in the blockchain. This status is not secure, and Cyclebit is not yet responsible for these funds.
-
-The operation should be considered successful **only** if the substatus `401` or `411` was received.
-The receipt was sent to the payer’s email address specified in the KYC form. You can release good(s)/service(s) to your costumer.
-
-If the status `402` or `412` was received, **you must stop** monitoring the transaction.
-If possible, generate a new payment link for the payer.
+If the `paid` status was received, Cyclebit detected the sent funds in the blockchain.\
+This status is **not secure**, and Cyclebit is not yet responsible for these funds.\
+\
+The payment should be considered successful **only** if the status `completed` was received.
