@@ -53,7 +53,8 @@ POST request — https://online.cyclebit.net/api/payment/createPayment
     to the page with the payment receipt) **(string)**;\
     `"description": "Just test"` – custom payment description that will be associated with the payment\
     and displayed in the list of operations in the Cyclebit web UI **(string)**;\
-    ![](/images/screenshots/description.png)
+    ![](/images/screenshots/description.png) \
+    \
     `"callback_url": "https://callbackserver.com"` – URL to which the callback notification message\
     will be sent after the payment is successfully confirmed **(string)**.\
     Callbacks will be described [below](#callbacks).
